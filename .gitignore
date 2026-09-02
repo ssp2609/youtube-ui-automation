@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Playwright and generated reports
+reports/
+test-results/
+playwright-report/
+blob-report/
+trace.zip
+*.webm
+
+# Logs
+*.log
+
+# IDE and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
