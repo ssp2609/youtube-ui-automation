@@ -1,22 +1,10 @@
-from pages.youtube_home_page import (
-    YouTubeHomePage,
+from config.test_data import (
+    EXPECTED_KEYWORDS,
+    SEARCH_SUGGESTION,
+    SEARCH_TEXT,
 )
-
-from pages.search_results_page import (
-    SearchResultsPage,
-)
-
-
-SEARCH_TEXT = "python for be"
-
-SEARCH_SUGGESTION = (
-    "Python for beginners"
-)
-
-EXPECTED_KEYWORDS = [
-    "python",
-    "beginner",
-]
+from pages.search_results_page import SearchResultsPage
+from pages.youtube_home_page import YouTubeHomePage
 
 
 def test_search_python_for_beginners(
@@ -29,23 +17,15 @@ def test_search_python_for_beginners(
     verify relevant results.
     """
 
-    home_page = (
-        YouTubeHomePage(page)
-    )
-
-    search_results_page = (
-        SearchResultsPage(page)
-    )
+    home_page = YouTubeHomePage(page)
+    search_results_page = SearchResultsPage(page)
 
     # Open YouTube.
     home_page.open()
-
     home_page.verify_home_page()
 
     # Enter partial search.
-    home_page.enter_search_text(
-        SEARCH_TEXT
-    )
+    home_page.enter_search_text(SEARCH_TEXT)
 
     # Select autocomplete.
     home_page.select_search_suggestion(

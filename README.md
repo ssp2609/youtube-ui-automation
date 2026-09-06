@@ -10,16 +10,21 @@ Playwright and the Page Object Model.
 | TC01 | Search through autocomplete | Relevant search results are displayed |
 | TC02 | Open and play a Programming with Mosh video | Cross-page title/channel, ad handling and playback continuity |
 | TC03 | Navigate from a video to its channel | The correct channel page and header open |
-| TC04 | Return from Shorts through the YouTube logo | Shorts state and final Home state |
+| TC04 | Return from Search Results through the YouTube logo | Search Results state and final Home state |
 | TC05 | Search for an invalid value | YouTube displays its no-results state |
 
 The tests exercise navigation, element interaction, data capture,
-cross-page validation, negative testing and reusable Page Objects.
+cross-page validation, negative testing and reusable Page Objects. The suite
+uses four YouTube page types: Home, Search Results, Video and Channel.
 
 ## Project structure
 
 ```text
 youtube-ui-automation/
+|-- config/
+|   |-- __init__.py
+|   |-- settings.py
+|   `-- test_data.py
 |-- pages/
 |   |-- channel_page.py
 |   |-- search_results_page.py
@@ -57,22 +62,28 @@ python -m playwright install chromium
 
 ## Running tests
 
-Run the complete suite with the two workers configured in `pytest.ini`:
+Run the complete suite sequentially (default):
 
 ```powershell
 pytest
 ```
 
-Run sequentially for troubleshooting:
+Run in parallel when explicitly required:
 
 ```powershell
-pytest -n 0
+pytest -n 2 --dist=load
 ```
 
 Run one test module:
 
 ```powershell
-pytest .\tests\test_video.py -n 0
+pytest .\tests\test_video.py
+```
+
+Run one specific test:
+
+```powershell
+pytest .\tests\test_home_navigation.py::test_return_to_home_from_search_results
 ```
 
 Run without slow tests:
@@ -87,9 +98,9 @@ Browser execution is headless and full-speed by default. Enable a visible,
 slowed browser for demonstrations:
 
 ```powershell
-$env:HEADED = "true"
+$env:HEADED = "1"
 $env:SLOW_MO = "500"
-pytest -n 0
+pytest
 ```
 
 Clear the presentation settings afterward:
@@ -101,20 +112,22 @@ Remove-Item Env:SLOW_MO -ErrorAction SilentlyContinue
 
 ## Reports and diagnostics
 
-Every run creates:
+Every sequential run creates:
 
 ```text
 reports/
 |-- logs/
-|   |-- test_execution_master.log
-|   |-- test_execution_gw0.log
-|   `-- test_execution_gw1.log
+|   `-- test_execution_master.log
 |-- test-results/
 `-- test_report.html
 ```
 
-The HTML report consolidates all workers. Playwright retains screenshots,
-videos and traces for failures. Open the report with:
+When xdist parallel execution is enabled, each worker writes its own log,
+for example `test_execution_gw0.log` and `test_execution_gw1.log`.
+
+The HTML report contains the complete run. When parallel execution is
+explicitly enabled, worker logs remain separated. Playwright retains
+screenshots, videos and traces for failures. Open the report with:
 
 ```powershell
 Start-Process .\reports\test_report.html
@@ -122,6 +135,20 @@ Start-Process .\reports\test_report.html
 
 Request logs include only the URL scheme, host and path. Query strings and
 temporary signed parameters are intentionally excluded.
+
+## Configuration and test data
+
+Framework-wide values are centralized in `config/settings.py`:
+
+- `BASE_URL`
+- `DEFAULT_TIMEOUT`
+- `ACTION_TIMEOUT`
+- `POLL_INTERVAL_MS`
+
+Shared scenario data is kept separately in `config/test_data.py`. Page-specific
+URL patterns, locators, UI messages, scroll behaviour and playback thresholds
+remain with the Page Object that owns that behaviour. This avoids turning the
+configuration module into a catch-all constants file.
 
 ## Design notes
 
@@ -131,7 +158,9 @@ temporary signed parameters are intentionally excluded.
 - Condition-based polling is used where YouTube's Trusted Types policy blocks
   Playwright string-based page predicates.
 - Slow tests are marked with `@pytest.mark.slow`.
-- Parallel workers write to separate log files.
+- Tests run sequentially by default for deterministic local/CI behaviour.
+- Parallel execution remains available explicitly with `pytest -n 2 --dist=load`.
+- Parallel workers write to separate log files when xdist is enabled.
 
 ## Known limitations
 

@@ -238,16 +238,40 @@ def _log_failed_request(failed_request) -> None:
     )
 
 
+def _get_env_bool(
+    variable_name: str,
+    default: bool = False,
+) -> bool:
+    """Read a boolean environment variable using common CLI values."""
+
+    raw_value = os.getenv(variable_name)
+
+    if raw_value is None:
+        return default
+
+    normalized_value = raw_value.strip().lower()
+    truthy_values = {"1", "true", "yes", "on"}
+    falsy_values = {"0", "false", "no", "off"}
+
+    if normalized_value in truthy_values:
+        return True
+
+    if normalized_value in falsy_values:
+        return False
+
+    raise ValueError(
+        f"Unsupported value for {variable_name}: {raw_value!r}. "
+        "Use one of: 1/0, true/false, yes/no, on/off."
+    )
+
+
 @pytest.fixture(scope="session")
 def browser_type_launch_args(
     browser_type_launch_args: dict,
 ) -> dict:
     """Configure the browser centrally for all tests."""
 
-    headed = os.getenv(
-        "HEADED",
-        "false",
-    ).lower() == "true"
+    headed = _get_env_bool("HEADED")
 
     slow_mo = int(
         os.getenv(

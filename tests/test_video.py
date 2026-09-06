@@ -1,27 +1,12 @@
 import pytest
 
-from pages.youtube_home_page import (
-    YouTubeHomePage,
+from config.test_data import (
+    CHANNEL_NAME,
+    SEARCH_SUGGESTION,
 )
-
-from pages.search_results_page import (
-    SearchResultsPage,
-)
-
-from pages.video_page import (
-    VideoPage,
-)
-
-
-SEARCH_TEXT = "python for be"
-
-SEARCH_SUGGESTION = (
-    "Python for beginners"
-)
-
-CHANNEL_NAME = (
-    "Programming with Mosh"
-)
+from pages.search_results_page import SearchResultsPage
+from pages.video_page import VideoPage
+from pages.youtube_home_page import YouTubeHomePage
 
 
 @pytest.mark.slow
@@ -36,28 +21,16 @@ def test_mosh_video_playback(
     open it and verify playback.
     """
 
-    home_page = (
-        YouTubeHomePage(page)
-    )
-
-    search_results_page = (
-        SearchResultsPage(page)
-    )
-
-    video_page = (
-        VideoPage(page)
-    )
+    home_page = YouTubeHomePage(page)
+    search_results_page = SearchResultsPage(page)
+    video_page = VideoPage(page)
 
     # Search.
     home_page.open()
 
     home_page.verify_home_page()
 
-    home_page.enter_search_text(
-        SEARCH_TEXT
-    )
-
-    home_page.select_search_suggestion(
+    home_page.search_directly(
         SEARCH_SUGGESTION
     )
 
@@ -65,24 +38,15 @@ def test_mosh_video_playback(
 
     # Scroll down twice,
     # then up twice.
-    search_results_page \
-        .scroll_down_twice_and_up_twice()
+    search_results_page.scroll_down_twice_and_up_twice()
 
     # Capture first Mosh video.
-    selected_video = (
-        search_results_page
-        .find_first_video_by_channel(
-            CHANNEL_NAME
-        )
+    selected_video = search_results_page.find_first_video_by_channel(
+        CHANNEL_NAME
     )
 
-    expected_title = (
-        selected_video["title"]
-    )
-
-    expected_channel = (
-        selected_video["channel"]
-    )
+    expected_title = selected_video["title"]
+    expected_channel = selected_video["channel"]
 
     # Open captured video.
     search_results_page.open_video(
@@ -105,5 +69,4 @@ def test_mosh_video_playback(
 
     # Wait 30 seconds and make sure
     # playback continues.
-    video_page \
-        .wait_30_seconds_and_verify_playing()
+    video_page.wait_30_seconds_and_verify_playing()
