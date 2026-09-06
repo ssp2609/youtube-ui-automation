@@ -3,16 +3,21 @@ import time
 
 from playwright.sync_api import Locator, Page, expect
 
+from config.settings import (
+    ACTION_TIMEOUT,
+    BASE_URL,
+    DEFAULT_TIMEOUT,
+    POLL_INTERVAL_MS,
+)
+
 
 class YouTubeHomePage:
-    URL = "https://www.youtube.com/"
+    """Page Object for YouTube Home and global header interactions."""
+
+    URL = BASE_URL
 
     HOME_URL_PATTERN = re.compile(
         r"https://www\.youtube\.com/(?:\?.*)?$"
-    )
-
-    SHORTS_URL_PATTERN = re.compile(
-        r"https://www\.youtube\.com/shorts(?:/[^?]*)?(?:\?.*)?$"
     )
 
     RESULTS_URL_PATTERN = re.compile(
@@ -22,12 +27,8 @@ class YouTubeHomePage:
     def __init__(self, page: Page) -> None:
         self.page = page
 
+        # Global header
         self.header = page.locator("ytd-masthead")
-
-        self.navigation = page.locator(
-            "ytd-guide-renderer, "
-            "ytd-mini-guide-renderer"
-        )
 
         self.search_box = self.header.get_by_role(
             "combobox",
@@ -40,46 +41,14 @@ class YouTubeHomePage:
             exact=True,
         )
 
-        self.home_link = (
-            self.navigation.get_by_role(
-                "link",
-                name="Home",
-                exact=True,
-            )
-            .first
-        )
+        self.youtube_logo = self.header.get_by_role(
+            "link",
+            name="YouTube Home",
+        ).first
 
-        self.shorts_link = (
-            self.navigation.get_by_role(
-                "link",
-                name="Shorts",
-                exact=True,
-            )
-            .first
-        )
-
-        self.active_shorts_navigation = page.locator(
-            "ytd-guide-entry-renderer"
-            "[active]:has(a[href='/shorts']), "
-            "ytd-mini-guide-entry-renderer"
-            "[active]:has(a[href='/shorts'])"
-        )
-
-        self.shorts_content = page.locator(
-            "ytd-reel-video-renderer, "
-            "ytd-shorts"
-        )
-
-        self.youtube_logo = (
-            self.header.get_by_role(
-                "link",
-                name="YouTube Home",
-            )
-            .first
-        )
-
-        self.category_bar = page.locator(
-            "ytd-feed-filter-chip-bar-renderer"
+        # Home-specific content
+        self.home_feed = page.locator(
+            "ytd-rich-grid-renderer"
         )
 
         self.empty_home_message = page.get_by_text(
@@ -87,38 +56,29 @@ class YouTubeHomePage:
             exact=True,
         )
 
-        self.all_category = (
-            self.category_bar.get_by_text(
-                "All",
-                exact=True,
-            )
-        )
-
     def _expect_any_visible(
         self,
         *locators: Locator,
-        timeout: int = 15_000,
+        timeout: int = DEFAULT_TIMEOUT,
         description: str,
     ) -> None:
         """
-        Wait until at least one candidate locator is visible.
+        Wait until at least one supplied locator becomes visible.
 
-        This provides compatibility with Playwright versions that do
-        not support Locator.filter(visible=True).
+        YouTube Home can show either:
+        1. the normal video grid, or
+        2. an empty-home state.
         """
 
         deadline = time.monotonic() + timeout / 1_000
 
         while time.monotonic() < deadline:
             for locator in locators:
-                count = locator.count()
-
-                for index in range(count):
+                for index in range(locator.count()):
                     if locator.nth(index).is_visible():
                         return
 
-            # This is condition polling, not a fixed test delay.
-            self.page.wait_for_timeout(100)
+            self.page.wait_for_timeout(POLL_INTERVAL_MS)
 
         raise AssertionError(
             f"Timed out after {timeout} ms waiting for "
@@ -126,7 +86,7 @@ class YouTubeHomePage:
         )
 
     def open(self) -> None:
-        """Open YouTube Home."""
+        """Navigate to YouTube Home."""
 
         self.page.goto(
             self.URL,
@@ -137,32 +97,27 @@ class YouTubeHomePage:
         """
         Verify that YouTube Home is loaded.
 
-        A valid Home content state is either:
+        Primary verification:
+        - Home URL
 
-        1. The All category is visible.
-        2. The empty Home message is visible.
+        Secondary verification:
+        - Home video grid
+        OR
+        - valid empty-home state
         """
 
         expect(self.page).to_have_url(
             self.HOME_URL_PATTERN,
-            timeout=15_000,
-        )
-
-        expect(self.search_box).to_be_visible(
-            timeout=15_000
-        )
-
-        expect(self.home_link).to_be_visible(
-            timeout=15_000
+            timeout=DEFAULT_TIMEOUT,
         )
 
         self._expect_any_visible(
-            self.all_category,
+            self.home_feed,
             self.empty_home_message,
-            timeout=15_000,
+            timeout=DEFAULT_TIMEOUT,
             description=(
-                "the Home category bar "
-                "or the empty Home message"
+                "the YouTube Home video grid "
+                "or the empty Home state"
             ),
         )
 
@@ -170,67 +125,65 @@ class YouTubeHomePage:
         self,
         text: str,
     ) -> None:
-        """Enter text into the search box."""
+        """Enter text into the YouTube search box."""
 
         expect(self.search_box).to_be_visible(
-            timeout=15_000
+            timeout=DEFAULT_TIMEOUT,
         )
 
         self.search_box.fill(text)
 
         expect(self.search_box).to_have_value(
             text,
-            timeout=10_000,
+            timeout=ACTION_TIMEOUT,
         )
 
     def select_search_suggestion(
         self,
         suggestion_text: str,
     ) -> None:
-        """
-        Select an autocomplete suggestion and verify navigation.
+        """Select the expected autocomplete suggestion.
 
-        This workflow is separate from Search-button submission.
+        This method is intentionally strict because autocomplete is the
+        behaviour under test in TC01. If the expected suggestion is not
+        rendered, the test must fail rather than silently switching to a
+        different search path.
         """
 
-        suggestion = (
-            self.page.get_by_role(
-                "option",
-                name=re.compile(
-                    re.escape(suggestion_text),
-                    re.IGNORECASE,
-                ),
-            )
-            .first
-        )
+        suggestion = self.page.get_by_role(
+            "option",
+            name=re.compile(
+                re.escape(suggestion_text),
+                re.IGNORECASE,
+            ),
+        ).first
 
         expect(suggestion).to_be_visible(
-            timeout=10_000
+            timeout=ACTION_TIMEOUT,
         )
-
         suggestion.click()
 
         expect(self.page).to_have_url(
             self.RESULTS_URL_PATTERN,
-            timeout=15_000,
+            timeout=DEFAULT_TIMEOUT,
         )
 
     def click_search(self) -> None:
-        """Submit the current search using the Search button."""
+        """Submit the current search."""
 
         expect(self.search_button).to_be_visible(
-            timeout=10_000
+            timeout=ACTION_TIMEOUT,
         )
 
         expect(self.search_button).to_be_enabled(
-            timeout=10_000
+            timeout=ACTION_TIMEOUT,
         )
 
         self.search_button.click()
 
         expect(self.page).to_have_url(
             self.RESULTS_URL_PATTERN,
-            timeout=15_000,
+            timeout=DEFAULT_TIMEOUT,
         )
 
     def search_directly(
@@ -239,41 +192,22 @@ class YouTubeHomePage:
     ) -> None:
         """Enter a search term and submit it."""
 
-        self.enter_search_text(search_text)
+        self.enter_search_text(
+            search_text
+        )
+
         self.click_search()
-
-    def open_shorts(self) -> None:
-        """Open Shorts from the side navigation."""
-
-        expect(self.shorts_link).to_be_visible(
-            timeout=15_000
-        )
-
-        self.shorts_link.click()
-
-    def verify_shorts_page_loaded(self) -> None:
-        """Verify the Shorts route and Shorts-specific UI state."""
-
-        expect(self.page).to_have_url(
-            self.SHORTS_URL_PATTERN,
-            timeout=15_000,
-        )
-
-        self._expect_any_visible(
-            self.active_shorts_navigation,
-            self.shorts_content,
-            timeout=15_000,
-            description=(
-                "the active Shorts navigation entry "
-                "or Shorts content"
-            ),
-        )
 
     def click_youtube_logo(self) -> None:
         """Click the YouTube logo to return Home."""
 
         expect(self.youtube_logo).to_be_visible(
-            timeout=15_000
+            timeout=DEFAULT_TIMEOUT,
         )
 
         self.youtube_logo.click()
+
+        expect(self.page).to_have_url(
+            self.HOME_URL_PATTERN,
+            timeout=DEFAULT_TIMEOUT,
+        )

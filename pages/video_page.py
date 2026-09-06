@@ -8,15 +8,27 @@ from playwright.sync_api import (
     expect,
 )
 
+from config.settings import (
+    ACTION_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    POLL_INTERVAL_MS,
+)
+
 
 LOGGER = logging.getLogger(__name__)
 
 
 class VideoPage:
+    SKIP_AD_CLICK_TIMEOUT = 3_000
+    DEFAULT_AD_TIMEOUT_SECONDS = 60
+    AD_POLL_INTERVAL_MS = 500
+    PLAYBACK_PROGRESS_TIMEOUT_SECONDS = 10
+    PLAYBACK_OBSERVATION_MS = 30_000
+    MINIMUM_PLAYBACK_PROGRESS_SECONDS = 20
+
     WATCH_URL_PATTERN = re.compile(
         r"https://www\.youtube\.com/watch(?:\?.*)?$"
     )
-    MINIMUM_30_SECOND_PROGRESS = 20
 
     def __init__(self, page: Page) -> None:
         self.page = page
@@ -27,26 +39,24 @@ class VideoPage:
         self.play_button = self.player.locator(
             ".ytp-play-button"
         ).first
+        self.video_title = page.locator(
+            "ytd-watch-metadata h1"
+        ).first
 
     def verify_loaded(self) -> None:
         """Verify that the Watch route and main video opened."""
 
         expect(self.page).to_have_url(
             self.WATCH_URL_PATTERN,
-            timeout=15_000,
+            timeout=DEFAULT_TIMEOUT,
         )
-        expect(self.video).to_be_attached(timeout=15_000)
+        expect(self.video).to_be_attached(timeout=DEFAULT_TIMEOUT)
 
     def get_title(self) -> str:
         """Return the visible video title."""
 
-        title = self.page.get_by_role(
-            "heading",
-            level=1,
-        ).first
-
-        expect(title).to_be_visible(timeout=15_000)
-        return title.inner_text().strip()
+        expect(self.video_title).to_be_visible(timeout=DEFAULT_TIMEOUT)
+        return self.video_title.inner_text().strip()
 
     def get_channel_name(self) -> str:
         """Return the channel name from watch-page metadata."""
@@ -55,7 +65,7 @@ class VideoPage:
             "ytd-watch-metadata ytd-channel-name a"
         ).first
 
-        expect(channel_link).to_be_visible(timeout=15_000)
+        expect(channel_link).to_be_visible(timeout=DEFAULT_TIMEOUT)
         return channel_link.inner_text().strip()
 
     def verify_video_details(
@@ -89,7 +99,7 @@ class VideoPage:
     def is_ad_playing(self) -> bool:
         """Return True when the verified player shows an advertisement."""
 
-        expect(self.player).to_be_attached(timeout=15_000)
+        expect(self.player).to_be_attached(timeout=DEFAULT_TIMEOUT)
         return bool(
             self.player.evaluate(
                 "player => player.classList.contains('ad-showing')"
@@ -117,7 +127,7 @@ class VideoPage:
                     continue
 
                 try:
-                    button.click(timeout=3_000)
+                    button.click(timeout=self.SKIP_AD_CLICK_TIMEOUT)
                     LOGGER.info("Skip Ad clicked using %s", selector)
                     return True
                 except PlaywrightError as error:
@@ -130,7 +140,7 @@ class VideoPage:
 
     def handle_ad_if_present(
         self,
-        timeout_seconds: int = 60,
+        timeout_seconds: int = DEFAULT_AD_TIMEOUT_SECONDS,
     ) -> None:
         """Skip an active ad or wait for it to finish."""
 
@@ -147,7 +157,7 @@ class VideoPage:
                 return
 
             self.skip_ad_if_available()
-            self.page.wait_for_timeout(500)
+            self.page.wait_for_timeout(self.AD_POLL_INTERVAL_MS)
 
         raise AssertionError(
             "Advertisement did not finish within "
@@ -168,7 +178,7 @@ class VideoPage:
             if bool(self.video.evaluate(expression)):
                 return
 
-            self.page.wait_for_timeout(100)
+            self.page.wait_for_timeout(POLL_INTERVAL_MS)
 
         raise AssertionError(
             f"Timed out after {timeout} ms waiting for {description}."
@@ -180,7 +190,7 @@ class VideoPage:
         self._wait_for_video_state(
             "video => video.readyState >= 2",
             "the video to contain playable data",
-            timeout=15_000,
+            timeout=DEFAULT_TIMEOUT,
         )
 
         paused = bool(
@@ -190,13 +200,13 @@ class VideoPage:
         if not paused:
             return
 
-        expect(self.play_button).to_be_visible(timeout=10_000)
+        expect(self.play_button).to_be_visible(timeout=ACTION_TIMEOUT)
         self.play_button.click()
 
         self._wait_for_video_state(
             "video => !video.paused",
             "the video to enter the playing state",
-            timeout=10_000,
+            timeout=ACTION_TIMEOUT,
         )
 
     def verify_video_is_playing(self) -> None:
@@ -207,7 +217,10 @@ class VideoPage:
             self.video.evaluate("video => video.currentTime")
         )
 
-        deadline = time.monotonic() + 10
+        deadline = (
+            time.monotonic()
+            + self.PLAYBACK_PROGRESS_TIMEOUT_SECONDS
+        )
 
         while time.monotonic() < deadline:
             current_time = float(
@@ -217,11 +230,12 @@ class VideoPage:
             if current_time >= start_time + 1:
                 break
 
-            self.page.wait_for_timeout(100)
+            self.page.wait_for_timeout(POLL_INTERVAL_MS)
         else:
             raise AssertionError(
                 "Video playback did not advance by one second "
-                "within 10 seconds."
+                f"within {self.PLAYBACK_PROGRESS_TIMEOUT_SECONDS} "
+                "seconds."
             )
 
         end_time = float(
@@ -240,7 +254,7 @@ class VideoPage:
         start_time = float(
             self.video.evaluate("video => video.currentTime")
         )
-        self.page.wait_for_timeout(30_000)
+        self.page.wait_for_timeout(self.PLAYBACK_OBSERVATION_MS)
         end_time = float(
             self.video.evaluate("video => video.currentTime")
         )
@@ -254,10 +268,10 @@ class VideoPage:
             actual_progress,
         )
 
-        assert actual_progress >= self.MINIMUM_30_SECOND_PROGRESS, (
+        assert actual_progress >= self.MINIMUM_PLAYBACK_PROGRESS_SECONDS, (
             "Playback did not progress sufficiently during the "
             "30-second interval. Expected at least "
-            f"{self.MINIMUM_30_SECOND_PROGRESS}s; actual progress "
+            f"{self.MINIMUM_PLAYBACK_PROGRESS_SECONDS}s; actual progress "
             f"was {actual_progress:.2f}s."
         )
 
@@ -268,7 +282,7 @@ class VideoPage:
             "ytd-watch-metadata ytd-channel-name a"
         ).first
 
-        expect(channel_link).to_be_visible(timeout=15_000)
+        expect(channel_link).to_be_visible(timeout=DEFAULT_TIMEOUT)
         LOGGER.info(
             "Opening channel: %s",
             channel_link.inner_text().strip(),

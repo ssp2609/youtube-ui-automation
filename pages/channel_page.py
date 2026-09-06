@@ -3,6 +3,8 @@ import re
 
 from playwright.sync_api import Page, expect
 
+from config.settings import DEFAULT_TIMEOUT
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,7 +24,7 @@ class ChannelPage:
 
         expect(self.page).to_have_url(
             self.CHANNEL_URL_PATTERN,
-            timeout=15_000,
+            timeout=DEFAULT_TIMEOUT,
         )
 
     def verify_channel_header(
@@ -41,7 +43,7 @@ class ChannelPage:
             level=1,
         )
 
-        expect(heading).to_be_visible(timeout=15_000)
+        expect(heading).to_be_visible(timeout=DEFAULT_TIMEOUT)
 
         LOGGER.info(
             "Correct channel page opened: %s",
